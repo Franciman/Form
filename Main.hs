@@ -35,12 +35,12 @@ main = do
   sessoCombo <- builderGetObject builder castToComboBox "sessoCombo"
   populate sessoCombo ["M", "F"]
   initialForm <- getForm builder
-  reactHandle <- reactInit (return (initialForm, NoEvent)) (\ _ _ b -> b >> return False) mainSF
+  reactHandle <- reactInit (return (initialForm, NoEvent)) (\ _ _ action -> action builder >> return False) mainSF
   initHandlers reactHandle builder
   widgetShowAll window
   mainGUI
 
-initHandlers :: ReactHandle (Form, Event ())  (IO ()) -> Builder -> IO ()
+initHandlers :: ReactHandle (Form, Event ())  ExecAction -> Builder -> IO ()
 initHandlers reactHandle builder = do
     timeref <- getCurrentTime >>= newIORef
     mapM_ (handleEntry timeref) entryFields
@@ -65,7 +65,7 @@ initHandlers reactHandle builder = do
           button `on` buttonActivated $ makeReact (Event ()) timeref reactHandle builder
           return ()
 
-makeReact :: Event () -> IORef UTCTime -> ReactHandle (Form, Event ())  (IO ()) -> Builder -> IO ()
+makeReact :: Event () -> IORef UTCTime -> ReactHandle (Form, Event ()) ExecAction -> Builder -> IO ()
 makeReact buttonPressed timeref handle builder = do
   oldTime <- readIORef timeref
   currTime <- getCurrentTime

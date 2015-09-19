@@ -22,18 +22,28 @@ data Form = Form { cognome :: String
                  , note :: String
                  }
 
-mainSF :: SF (Form, Event ())  (IO ())
+mainSF :: SF (Form, Event ()) ExecAction
 mainSF = proc (form, addPressed) -> do
   (checkExecAction, validForm) <- checkForm -< form
   addExecAction <- addData -< (form, addPressed `tag` validForm)
   returnA -< checkExecAction *>* addExecAction
 
-addData :: SF (Form, Event Bool) (IO ())
+addData :: SF (Form, Event Bool) ExecAction
 addData = arr $ \(form, ev) -> event doNothing (addToDb form) ev
-  where doNothing :: IO ()
-        doNothing = return ()
-        addToDb :: Form -> Bool -> IO ()
-        addToDb form b = putStrLn $ show b
+  where doNothing :: ExecAction
+        doNothing = \builder -> return ()
+        addToDb :: Form -> Bool -> ExecAction
+        addToDb form b = \builder -> if b
+                                     then return ()
+                                     else showError builder
+
+showError :: ExecAction
+showError builder = do
+  mainWin <- builderGetObject builder castToWindow "window1"
+  msgDialog <- messageDialogNew (Just mainWin) [DialogModal] MessageError ButtonsClose "Ci sono degli errori, l'alunno non è stato aggiunto"
+  dialogRun msgDialog
+  widgetDestroy msgDialog
+  return ()
 
 type ExecAction = Builder -> IO ()
 (*>*) :: ExecAction -> ExecAction -> ExecAction
@@ -52,7 +62,7 @@ checkForm = parB
   , checkIndirizzo           <<^ indirizzo
   , checkTelefono            <<^ telefono
   , checkGradoEDescrizione   <<^ gradoHandicap &&& descrizioneHandicap
-  ] >>^ foldr (\(action, val) (actAccum, valAccum) -> (action >> actAccum, val && valAccum)) (return ())
+  ] >>^ foldr (\(action, val) (actAccum, valAccum) -> (action *>* actAccum, val && valAccum)) (\builder -> return (), True)
 
 setError :: String -> String -> (ExecAction, Bool)
 setError errorLabelName errorMsg = (action, False)
@@ -70,53 +80,49 @@ unsetError errorLabelName = (action , True)
           labelSetText label ""
           return ()
 
+checkCompulsoryField :: String -> (String -> Bool) -> String -> SF String (ExecAction, Bool)
+checkCompulsoryField errorLabelName pred errorMsg = arr $ \str -> if null str
+                                                                  then setError errorLabelName "Questo campo è obbligatorio"
+                                                                  else if pred str
+                                                                       then unsetError errorLabelName
+                                                                       else setError errorLabelName errorMsg
+
 checkCognome :: SF String (ExecAction, Bool)
-checkCognome = arr $ if all (\c -> isAlpha c || isSpace c)
-                     then unsetError "cognomeError"
-                     else setError "cognomeError" "C'è qualche carattere non valido"
+checkCognome = checkCompulsoryField "cognomeError" pred "Cognome non valido"
+  where pred = all (\c -> isAlpha c || isSpace c)
 
 checkNome :: SF String (ExecAction, Bool)
-checkNome = arr $ if all (\c -> isAlpha c || isSpace c)
-                  then unsetError "nomeError"
-                  else setError "nomeError" "C'è qualche carattere non valido"
+checkNome = checkCompulsoryField "nomeError" pred "Nome non valido"
+  where pred = all (\c -> isAlpha c || isSpace c)
 
 checkDataNascita :: SF String (ExecAction, Bool)
-checkDataNascita = arr $ \str -> str =~ "^\\d$"
+checkDataNascita = checkCompulsoryField "dataError" pred "La data deve essere nel formato gg/mm/aaaa"
+  where pred :: String -> Bool
+        pred str = str =~ "^([[:digit:]]{2})/([[:digit:]]{2})/([[:digit:]]{4})$"
 
 checkComuneNascita :: SF String (ExecAction, Bool)
-checkComuneNascita = arr $ if not . null
-                           then unsetError "comuneNascitaError"
-                           else setError "comuneNascitaError" "Inserire un comune"
+checkComuneNascita = checkCompulsoryField "comuneNascitaError" (const True) ""
 
 checkCodiceFiscale :: SF String (ExecAction, Bool)
-checkCodiceFiscale = arr $ if \str -> length str == 16 && all (\c -> isAlpha c || isDigit c) str
-                           then unsetError "codiceFiscaleError"
-                           else setError "codiceFiscaleError" "C'è qualche carattere non valido"
+checkCodiceFiscale = checkCompulsoryField "codiceFiscaleError" pred "Codice fiscale non valido"
+  where pred str = length str == 16 && all (\c -> isAlpha c || isDigit c) str
 
 checkSesso :: SF String (ExecAction, Bool)
-checkSesso = arr $ if not . null
-                   then unsetError "sessoError"
-                   else setError "sessoError" "Inserire sesso"
+checkSesso = checkCompulsoryField "sessoError" (const True) ""
 
 checkComuneResidenza :: SF String (ExecAction, Bool)
-checkComuneResidenza = arr $ if all (\c -> isAlpha c || isSpace c)
-                             then unsetError "comuneResidenzaError"
-                             else setError "comuneResidenzaError" "C'è qualche carattere non valido"
+checkComuneResidenza = checkCompulsoryField "comuneResidenzaError" pred "Comune non valido"
+  where pred str = all (\c -> isAlpha c || isSpace c) str
 
 checkCap :: SF String (ExecAction, Bool)
-checkCap = arr $ if not . null
-                   then unsetError "capError"
-                   else setError "capError" "Inserire cap"
+checkCap = checkCompulsoryField "capError" (const True) ""
 
 checkIndirizzo :: SF String (ExecAction, Bool)
-checkIndirizzo = arr $ if all (\c -> isAlpha c || isDigit c || isSpace c)
-                       then unsetError "indirizzoError"
-                       else setError "indirizzoError" "C'è qualche carattere non valido"
+checkIndirizzo = checkCompulsoryField "indirizzoError" pred "Indirizzo non valido"
+  where pred str = all (\c -> isAlpha c || isDigit c || isSpace c) str
 
 checkTelefono :: SF String (ExecAction, Bool)
-checkTelefono = arr $ if all isDigit
-                      then unsetError "telefonoError"
-                      else setError "telefonoError" "Numero di telefono non valido"
+checkTelefono = checkCompulsoryField "telefonoError"  (all isDigit) "Numero di telefono non valido"
 
 checkGradoHandicap :: SF String ((ExecAction, Bool), Bool)
 checkGradoHandicap = arr $ \str -> if null str
