@@ -4,9 +4,10 @@ import Graphics.UI.Gtk
 import FRP.Yampa
 import ValidityCheck
 import Database
-import qualified Data.Text as T (pack)
+import qualified Data.Text as T
 import Control.Monad (zipWithM_)
 import Data.Time.Clock
+import Data.IORef
 
 populate :: ComboBox -> [String] -> IO ()
 populate combo f = do
@@ -31,8 +32,10 @@ main = do
   populate comuneNascitaCombo comuni
   capCombo <- builderGetObject builder castToComboBox "capCombo"
   populate capCombo caps
-  populate comuneNascitaCombo capCombo
-  reactHandle <- reactInit getForm  (\ _ _ b -> b >> return False) mainSF
+  sessoCombo <- builderGetObject builder castToComboBox "sessoCombo"
+  populate sessoCombo ["M", "F"]
+  initialForm <- getForm builder
+  reactHandle <- reactInit (return (initialForm, NoEvent)) (\ _ _ b -> b >> return False) mainSF
   initHandlers reactHandle builder
   widgetShowAll window
   mainGUI
@@ -41,7 +44,7 @@ initHandlers :: ReactHandle (Form, Event ())  (IO ()) -> Builder -> IO ()
 initHandlers reactHandle builder = do
     timeref <- getCurrentTime >>= newIORef
     mapM_ (handleEntry timeref) entryFields
-    mapM_ (handleCombo timeRef) comboFields
+    mapM_ (handleCombo timeref) comboFields
     handleAddButton timeref
 
   where handleEntry :: IORef UTCTime -> String -> IO ()
@@ -52,24 +55,25 @@ initHandlers reactHandle builder = do
 
         handleCombo :: IORef UTCTime -> String -> IO ()
         handleCombo timeref comboName = do
-          combo <- builderGetObject castToComboBox (comboName ++ "Combo")
+          combo <- builderGetObject builder castToComboBox (comboName ++ "Combo")
           combo `on` changed $ makeReact NoEvent timeref reactHandle builder
           return ()
 
-       handleAddButton :: IORef UTCTime -> IO ()
-       handleAddButton timeref = do
-         button <- builderGetObject castToButton "aggiungiButton"
-         button `on` buttonActivated $ makeReact (Event ()) timeref reactHandle builder
-         return ()
+        handleAddButton :: IORef UTCTime -> IO ()
+        handleAddButton timeref = do
+          button <- builderGetObject builder castToButton "aggiungiButton"
+          button `on` buttonActivated $ makeReact (Event ()) timeref reactHandle builder
+          return ()
 
 makeReact :: Event () -> IORef UTCTime -> ReactHandle (Form, Event ())  (IO ()) -> Builder -> IO ()
 makeReact buttonPressed timeref handle builder = do
   oldTime <- readIORef timeref
   currTime <- getCurrentTime
-  writeIORef currTime
-  let dt = diffUTCTime oldTime currTime
+  writeIORef timeref currTime
+  let dt = realToFrac $ diffUTCTime oldTime currTime :: DTime
   form <- getForm builder
   react handle (dt, Just (form, buttonPressed))
+  return ()
 
 
 getForm :: Builder -> IO Form
@@ -90,4 +94,4 @@ getForm builder = Form <$> entryContent "cognomeEntry"
   where entryContent :: String -> IO String
         entryContent entryName = builderGetObject builder castToEntry entryName >>= entryGetText
         comboBoxEntry :: String -> IO String
-        comboBoxEntry comboName = builderGetObject builder castToComboBox comboName >>= comboBoxGetActiveText >>= maybe "" id
+        comboBoxEntry comboName = maybe "" T.unpack <$> (builderGetObject builder castToComboBox comboName >>= comboBoxGetActiveText)

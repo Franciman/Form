@@ -10,4 +10,5 @@ getComuniAndCap = do
     where toPair :: [[D.SqlValue]] -> IO ([String], [String])
 	  toPair arr = return $ foldr (\xs (comuni, cap) -> ( (D.fromSql (xs !! 0) : comuni), (D.fromSql (xs !! 1) : cap) )) ([], []) arr
 
-
+--writeFormToDb :: Form -> IO ()
+--writeFormToDb form = return ()

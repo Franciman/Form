@@ -192,16 +192,6 @@
               </packing>
             </child>
             <child>
-              <object class="GtkEntry" id="dataEntry">
-                <property name="visible">True</property>
-                <property name="can_focus">True</property>
-              </object>
-              <packing>
-                <property name="left_attach">1</property>
-                <property name="top_attach">2</property>
-              </packing>
-            </child>
-            <child>
               <object class="GtkEntry" id="codiceFiscaleEntry">
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
@@ -411,10 +401,6 @@
               <object class="GtkComboBoxText" id="sessoCombo">
                 <property name="visible">True</property>
                 <property name="can_focus">False</property>
-                <items>
-                  <item translatable="yes">Maschio</item>
-                  <item translatable="yes">Femmina</item>
-                </items>
               </object>
               <packing>
                 <property name="left_attach">1</property>
@@ -439,6 +425,16 @@
               <packing>
                 <property name="left_attach">1</property>
                 <property name="top_attach">7</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkEntry" id="dataEntry">
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+              </object>
+              <packing>
+                <property name="left_attach">1</property>
+                <property name="top_attach">2</property>
               </packing>
             </child>
           </object>

@@ -4,6 +4,7 @@ module ValidityCheck where
 import Data.Char
 import FRP.Yampa
 import Text.Regex.TDFA
+import Graphics.UI.Gtk
 
 data Form = Form { cognome :: String
                  , nome :: String
@@ -23,15 +24,22 @@ data Form = Form { cognome :: String
 
 mainSF :: SF (Form, Event ())  (IO ())
 mainSF = proc (form, addPressed) -> do
-  validForm <- checkForm -< form
-  addData -< (form, addPressed `tag` validForm)
+  (checkExecAction, validForm) <- checkForm -< form
+  addExecAction <- addData -< (form, addPressed `tag` validForm)
+  returnA -< checkExecAction *>* addExecAction
 
 addData :: SF (Form, Event Bool) (IO ())
 addData = arr $ \(form, ev) -> event doNothing (addToDb form) ev
-  where doNothing = return ()
-        addToDb form = return ()
+  where doNothing :: IO ()
+        doNothing = return ()
+        addToDb :: Form -> Bool -> IO ()
+        addToDb form b = putStrLn $ show b
 
-checkForm :: SF Form Bool
+type ExecAction = Builder -> IO ()
+(*>*) :: ExecAction -> ExecAction -> ExecAction
+a1 *>* a2 = \builder -> a1 builder >> a2 builder
+
+checkForm :: SF Form (ExecAction, Bool)
 checkForm = parB
   [ checkCognome             <<^ cognome
   , checkNome                <<^ nome
@@ -44,50 +52,88 @@ checkForm = parB
   , checkIndirizzo           <<^ indirizzo
   , checkTelefono            <<^ telefono
   , checkGradoEDescrizione   <<^ gradoHandicap &&& descrizioneHandicap
-  ] >>^ and
+  ] >>^ foldr (\(action, val) (actAccum, valAccum) -> (action >> actAccum, val && valAccum)) (return ())
 
-checkCognome :: SF String Bool
-checkCognome = arr $ all (\c -> isAlpha c || isSpace c)
+setError :: String -> String -> (ExecAction, Bool)
+setError errorLabelName errorMsg = (action, False)
+  where action :: ExecAction
+        action builder = do
+          label <- builderGetObject builder castToLabel errorLabelName
+          labelSetText label errorMsg
+          return ()
 
-checkNome :: SF String Bool
-checkNome = arr $ all (\c -> isAlpha c || isSpace c)
+unsetError :: String -> (ExecAction, Bool)
+unsetError errorLabelName = (action , True)
+  where action :: ExecAction
+        action builder = do
+          label <- builderGetObject builder castToLabel errorLabelName
+          labelSetText label ""
+          return ()
 
-checkDataNascita :: SF String Bool
+checkCognome :: SF String (ExecAction, Bool)
+checkCognome = arr $ if all (\c -> isAlpha c || isSpace c)
+                     then unsetError "cognomeError"
+                     else setError "cognomeError" "C'è qualche carattere non valido"
+
+checkNome :: SF String (ExecAction, Bool)
+checkNome = arr $ if all (\c -> isAlpha c || isSpace c)
+                  then unsetError "nomeError"
+                  else setError "nomeError" "C'è qualche carattere non valido"
+
+checkDataNascita :: SF String (ExecAction, Bool)
 checkDataNascita = arr $ \str -> str =~ "^\\d$"
 
-checkComuneNascita :: SF String Bool
-checkComuneNascita = arr $ not . null
+checkComuneNascita :: SF String (ExecAction, Bool)
+checkComuneNascita = arr $ if not . null
+                           then unsetError "comuneNascitaError"
+                           else setError "comuneNascitaError" "Inserire un comune"
 
-checkCodiceFiscale :: SF String Bool
-checkCodiceFiscale = arr $ \str -> lenght str == 16 && all (\c -> isAlpha c || isDigit c) str
+checkCodiceFiscale :: SF String (ExecAction, Bool)
+checkCodiceFiscale = arr $ if \str -> length str == 16 && all (\c -> isAlpha c || isDigit c) str
+                           then unsetError "codiceFiscaleError"
+                           else setError "codiceFiscaleError" "C'è qualche carattere non valido"
 
-checkSesso :: SF String Bool
-checkSesso = arr $ not . null
+checkSesso :: SF String (ExecAction, Bool)
+checkSesso = arr $ if not . null
+                   then unsetError "sessoError"
+                   else setError "sessoError" "Inserire sesso"
 
-checkComuneResidenza :: SF String Bool
-checkComuneResidenza = arr $ all (\c -> isAlpha c || isSpace c)
+checkComuneResidenza :: SF String (ExecAction, Bool)
+checkComuneResidenza = arr $ if all (\c -> isAlpha c || isSpace c)
+                             then unsetError "comuneResidenzaError"
+                             else setError "comuneResidenzaError" "C'è qualche carattere non valido"
 
-checkCap :: SF String Bool
-checkCap :: arr $ not . null
+checkCap :: SF String (ExecAction, Bool)
+checkCap = arr $ if not . null
+                   then unsetError "capError"
+                   else setError "capError" "Inserire cap"
 
-checkIndirizzo :: SF String Bool
-checkIndirizzo :: arr $ all (\c -> isAlpha c || isDigit c || isSpace c)
+checkIndirizzo :: SF String (ExecAction, Bool)
+checkIndirizzo = arr $ if all (\c -> isAlpha c || isDigit c || isSpace c)
+                       then unsetError "indirizzoError"
+                       else setError "indirizzoError" "C'è qualche carattere non valido"
 
-checkTelefono :: SF String Bool
-checkTelefono = arr $ all isDigit
+checkTelefono :: SF String (ExecAction, Bool)
+checkTelefono = arr $ if all isDigit
+                      then unsetError "telefonoError"
+                      else setError "telefonoError" "Numero di telefono non valido"
 
-checkGradoHandicap :: SF String (Bool, Bool)
+checkGradoHandicap :: SF String ((ExecAction, Bool), Bool)
 checkGradoHandicap = arr $ \str -> if null str
-                                   then (True, False)
-                                   else let b = all isDigit str in (b, b)
+                                   then (unsetError "gradoError", False)
+                                   else if all isDigit str
+                                        then (unsetError "gradoError", True)
+                                        else (setError "gradoError" "Grado non valido", False)
 
-checkDescrizioneHandicap :: SF (String, Bool) Bool
+checkDescrizioneHandicap :: SF (String, Bool) (ExecAction, Bool)
 checkDescrizioneHandicap = arr $ \(str, needed) -> if needed
-                                                   then not . null $ str
-                                                   else True
+                                                   then if not . null $ str
+                                                        then unsetError "descrizioneError"
+                                                        else setError "descrizioneError" "Descrizione necessaria"
+                                                   else unsetError "descrizioneError"
 
-checkGradoEDescrizione :: SF (String, String) Bool
+checkGradoEDescrizione :: SF (String, String) (ExecAction, Bool)
 checkGradoEDescrizione = proc (gradoStr, descrStr) -> do
-  (validGrado, descrNeeded) <- checkGradoHandicap -< gradoStr
-  validDescr <- checkDescrizioneHandicap -< (descrStr, descrNeeded)
-  returnA $ validGrado && validDescr
+  ((gradoExecAction, validGrado), descrNeeded) <- checkGradoHandicap -< gradoStr
+  (descrExecAction, validDescr) <- checkDescrizioneHandicap -< (descrStr, descrNeeded)
+  returnA -< (gradoExecAction *>* descrExecAction ,validGrado && validDescr)
