@@ -5,22 +5,8 @@ import Data.Char
 import FRP.Yampa
 import Text.Regex.TDFA
 import Graphics.UI.Gtk
-
-data Form = Form { cognome :: String
-                 , nome :: String
-                 , dataNascita :: String
-                 , comuneNascita :: String
-                 , codiceFiscale :: String
-                 , sesso :: String
-                 , comuneResidenza :: String
-                 , cap :: String
-                 , indirizzo :: String
-                 , telefono :: String
-                 , allergie :: String
-                 , gradoHandicap :: String
-                 , descrizioneHandicap :: String
-                 , note :: String
-                 }
+import Form
+import Database
 
 mainSF :: SF (Form, Event ()) ExecAction
 mainSF = proc (form, addPressed) -> do
@@ -34,8 +20,16 @@ addData = arr $ \(form, ev) -> event doNothing (addToDb form) ev
         doNothing = \builder -> return ()
         addToDb :: Form -> Bool -> ExecAction
         addToDb form b = \builder -> if b
-                                     then return ()
+                                     then writeFormToDb form >> showSuccess builder
                                      else showError builder
+
+showSuccess :: ExecAction
+showSuccess builder = do
+  mainWin <- builderGetObject builder castToWindow "window1"
+  msgDialog <- messageDialogNew (Just mainWin) [DialogModal] MessageInfo ButtonsClose "Alunno aggiunto con successo"
+  dialogRun msgDialog
+  widgetDestroy msgDialog
+  return ()
 
 showError :: ExecAction
 showError builder = do

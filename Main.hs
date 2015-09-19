@@ -8,6 +8,7 @@ import qualified Data.Text as T
 import Control.Monad (zipWithM_)
 import Data.Time.Clock
 import Data.IORef
+import Form
 
 populate :: ComboBox -> [String] -> IO ()
 populate combo f = do
