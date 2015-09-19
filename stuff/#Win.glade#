@@ -192,16 +192,6 @@
               </packing>
             </child>
             <child>
-              <object class="GtkEntry" id="dataEntry">
-                <property name="visible">True</property>
-                <property name="can_focus">True</property>
-              </object>
-              <packing>
-                <property name="left_attach">1</property>
-                <property name="top_attach">2</property>
-              </packing>
-            </child>
-            <child>
               <object class="GtkEntry" id="codiceFiscaleEntry">
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
@@ -439,6 +429,19 @@
               <packing>
                 <property name="left_attach">1</property>
                 <property name="top_attach">7</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkCalendar" id="calendar1">
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="year">2015</property>
+                <property name="month">8</property>
+                <property name="day">19</property>
+              </object>
+              <packing>
+                <property name="left_attach">1</property>
+                <property name="top_attach">2</property>
               </packing>
             </child>
           </object>

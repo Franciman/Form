@@ -1,95 +1,93 @@
 {-# LANGUAGE Arrows #-}
 module ValidityCheck where
 
-import FRP.Yampa
 import Data.Char
-import qualified Text.Regex.TDFA as R
+import FRP.Yampa
+import Text.Regex.TDFA
 
-data EventData = EventData {
-          text :: String,
-          eventSource :: String
-     } deriving (Eq, Show)
+data Form = Form { cognome :: String
+                 , nome :: String
+                 , dataNascita :: String
+                 , comuneNascita :: String
+                 , codiceFiscale :: String
+                 , sesso :: String
+                 , comuneResidenza :: String
+                 , cap :: String
+                 , indirizzo :: String
+                 , telefono :: String
+                 , allergie :: String
+                 , gradoHandicap :: String
+                 , descrizioneHandicap :: String
+                 , note :: String
+                 }
 
-validCF :: String -> Bool
-validCF str = all isAlphaNum str
+mainSF :: SF (Form, Event ())  (IO ())
+mainSF = proc (form, addPressed) -> do
+  validForm <- checkForm -< form
+  addData -< (form, addPressed `tag` validForm)
 
-validName :: String -> Bool
-validName str = all (\c -> isAlpha c || isSpace c) str
+addData :: SF (Form, Event Bool) (IO ())
+addData = arr $ \(form, ev) -> event doNothing (addToDb form) ev
+  where doNothing = return ()
+        addToDb form = return ()
 
-validNumber :: String -> Bool
-validNumber str = R.matchTest regex str
-  where regex = R.makeRegex "^([[:digit:]]){10}$" :: R.Regex
+checkForm :: SF Form Bool
+checkForm = parB
+  [ checkCognome             <<^ cognome
+  , checkNome                <<^ nome
+  , checkDataNascita         <<^ dataNascita
+  , checkComuneNascita       <<^ comuneNascita
+  , checkCodiceFiscale       <<^ codiceFiscale
+  , checkSesso               <<^ sesso
+  , checkComuneResidenza     <<^ comuneResidenza
+  , checkCap                 <<^ cap
+  , checkIndirizzo           <<^ indirizzo
+  , checkTelefono            <<^ telefono
+  , checkGradoEDescrizione   <<^ gradoHandicap &&& descrizioneHandicap
+  ] >>^ and
 
-validDate :: String -> Bool
-validDate str = R.matchTest regex str
-  where regex = R.makeRegex "^([[:digit:]]+)/([[:digit:]]+)/([[:digit:]]+)$" :: R.Regex
+checkCognome :: SF String Bool
+checkCognome = arr $ all (\c -> isAlpha c || isSpace c)
 
-validGrade :: String -> (Event (), Bool)
-validGrade str =  let res = R.matchTest regex str
-		  in (if res then Event () else NoEvent, str == "" || res)
-  where regex = R.makeRegex "^(100|0?[0-9]{1,2})$" :: R.Regex
+checkNome :: SF String Bool
+checkNome = arr $ all (\c -> isAlpha c || isSpace c)
 
-isValid :: (String -> a) -> a -> (Event String) -> a
-isValid validator oldValue = event oldValue validator
+checkDataNascita :: SF String Bool
+checkDataNascita = arr $ \str -> str =~ "^\\d$"
 
-nomeValidator :: SF (Event String) Bool
-nomeValidator = sscan (isValid validName) False
+checkComuneNascita :: SF String Bool
+checkComuneNascita = arr $ not . null
 
-cognomeValidator :: SF (Event String) Bool
-cognomeValidator = sscan (isValid validName) False
+checkCodiceFiscale :: SF String Bool
+checkCodiceFiscale = arr $ \str -> lenght str == 16 && all (\c -> isAlpha c || isDigit c) str
 
-dataValidator :: SF (Event String) Bool
-dataValidator = sscan (isValid validDate) False
+checkSesso :: SF String Bool
+checkSesso = arr $ not . null
 
-cfValidator :: SF (Event String) Bool
-cfValidator = sscan (isValid validCF) False
+checkComuneResidenza :: SF String Bool
+checkComuneResidenza = arr $ all (\c -> isAlpha c || isSpace c)
 
-comuneValidator :: SF (Event String) Bool
-comuneValidator = sscan (isValid validName) False
+checkCap :: SF String Bool
+checkCap :: arr $ not . null
 
-indirizzoValidator :: SF (Event String) Bool
-indirizzoValidator = sscan (isValid validName) False
+checkIndirizzo :: SF String Bool
+checkIndirizzo :: arr $ all (\c -> isAlpha c || isDigit c || isSpace c)
 
-telefonoValidator :: SF (Event String) Bool
-telefonoValidator = sscan (isValid validNumber) False
+checkTelefono :: SF String Bool
+checkTelefono = arr $ all isDigit
 
-gradoValidator :: SF (Event String) (Event (), Bool)
-gradoValidator = sscan (isValid validGrade) (NoEvent, True)
+checkGradoHandicap :: SF String (Bool, Bool)
+checkGradoHandicap = arr $ \str -> if null str
+                                   then (True, False)
+                                   else let b = all isDigit str in (b, b)
 
-descrizioneValidator :: SF (Event (), Event String) Bool
-descrizioneValidator  = sscanPrim validate False True
-  where validate :: Bool -> (Event (), Event String) -> Maybe (Bool, Bool)
-	validate notEmpty (validGrado, ev) = event unchanged check ev
-	  where unchanged :: Maybe (Bool, Bool)
-	        unchanged = Just (notEmpty, event True (\() -> notEmpty) validGrado)
-	        check :: String -> Maybe (Bool, Bool)
-	        check str = Just (not . null $ str, correct)
-		  where correct :: Bool
-	                correct = event True (\() -> not . null $ str) validGrado
+checkDescrizioneHandicap :: SF (String, Bool) Bool
+checkDescrizioneHandicap = arr $ \(str, needed) -> if needed
+                                                   then not . null $ str
+                                                   else True
 
-
-changed :: String -> SF (Event EventData) (Event String)
-changed sourceName = arr $ event NoEvent getContent
-  where getContent :: EventData -> Event String
-	getContent evData = if eventSource evData == sourceName
-	                    then Event $ text evData
-	                    else NoEvent
-
-gradoEdescrizione :: SF (Event EventData) Bool
-gradoEdescrizione = proc ev  -> do
-  (required, b1) <- gradoValidator <<< changed "grado" -< ev
-  b2 <- descrizioneValidator <<< (second $ changed "descrizione") -< (required, ev)
-  returnA -< and [b1, b2]
-
-formValidator :: SF (Event EventData) [String]
-formValidator = parB checkers >>^ printa
-  where checkers = [changed "cognome" >>> cognomeValidator,
-	            changed "nome" >>> nomeValidator,
-		    changed "data" >>> dataValidator,
-		    changed "codiceFiscale" >>> cfValidator,
-		    changed "comuneResidenza" >>> comuneValidator,
-		    changed "indirizzo" >>> indirizzoValidator,
-		    changed "telefono" >>> telefonoValidator,
-		    gradoEdescrizione]
-        printa xs = zipWith printer ["cognome ", "nome ", "data ", "codiceFiscale ", "comuneResidenza ", "indirizzo ", "telefono ", "gradoEdescr "] xs
-	  where printer n b = n ++ show b
+checkGradoEDescrizione :: SF (String, String) Bool
+checkGradoEDescrizione = proc (gradoStr, descrStr) -> do
+  (validGrado, descrNeeded) <- checkGradoHandicap -< gradoStr
+  validDescr <- checkDescrizioneHandicap -< (descrStr, descrNeeded)
+  returnA $ validGrado && validDescr
